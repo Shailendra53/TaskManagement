@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
@@ -35,27 +35,32 @@ interface SpeechRecognition extends EventTarget {
   abort(): void;
 }
 
+type SpeechRecognitionConstructor = new () => SpeechRecognition;
+
+interface WindowWithSpeechRecognition extends Window {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+}
+
 interface VoiceInputProps {
   onTranscript: (text: string) => void;
 }
 
+const getSpeechRecognition = (): SpeechRecognitionConstructor | null => {
+  const { SpeechRecognition, webkitSpeechRecognition } = window as WindowWithSpeechRecognition;
+  return SpeechRecognition || webkitSpeechRecognition || null;
+};
+
 export default function VoiceInput({ onTranscript }: VoiceInputProps) {
   const [isListening, setIsListening] = useState(false);
-  const [isSupported, setIsSupported] = useState(true);
-
-  useEffect(() => {
-    const SpeechRecognitionAPI = 
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
-    if (!SpeechRecognitionAPI) {
-      setIsSupported(false);
-    }
-  }, []);
+  const [isSupported] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(getSpeechRecognition());
+  });
 
   const startListening = () => {
-    const SpeechRecognitionAPI = 
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
+    const SpeechRecognitionAPI = getSpeechRecognition();
+
     if (!SpeechRecognitionAPI) {
       alert('Speech recognition is not supported in your browser');
       return;

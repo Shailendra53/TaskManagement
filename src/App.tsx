@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Task, Category } from './types';
 import { db } from './db';
 import VoiceInput from './components/VoiceInput';
@@ -6,7 +6,7 @@ import TaskItem from './components/TaskItem';
 import CategoryManager, { PRESET_COLORS } from './components/CategoryManager';
 import LockScreen from './components/LockScreen';
 import Settings from './components/Settings';
-import { needsUnlock, clearSession, setupAutoLock } from './auth';
+import { needsUnlock, setupAutoLock } from './auth';
 
 function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -19,21 +19,26 @@ function App() {
   const [isLocked, setIsLocked] = useState(needsUnlock());
   const [showSettings, setShowSettings] = useState(false);
 
-  useEffect(() => {
-    if (!isLocked) {
-      initializeApp();
+  const cleanupOldArchives = useCallback(async () => {
+    try {
+      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+      const archived = await db.getArchivedTasks();
+      
+      for (const task of archived) {
+        if (task.completedAt && task.completedAt < thirtyDaysAgo) {
+          await db.deleteArchivedTask(task.id);
+        }
+      }
+      
+      // Reload after cleanup
+      const updatedArchived = await db.getArchivedTasks();
+      setArchivedTasks(updatedArchived);
+    } catch (error) {
+      console.error('Failed to cleanup old archives:', error);
     }
-  }, [isLocked]);
-
-  // Setup auto-lock on tab close/hide
-  useEffect(() => {
-    const cleanup = setupAutoLock(() => {
-      setIsLocked(true);
-    });
-    return cleanup;
   }, []);
 
-  const initializeApp = async () => {
+  const initializeApp = useCallback(async () => {
     try {
       await db.init();
       
@@ -66,26 +71,21 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [cleanupOldArchives]);
 
-  const cleanupOldArchives = async () => {
-    try {
-      const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-      const archived = await db.getArchivedTasks();
-      
-      for (const task of archived) {
-        if (task.completedAt && task.completedAt < thirtyDaysAgo) {
-          await db.deleteArchivedTask(task.id);
-        }
-      }
-      
-      // Reload after cleanup
-      const updatedArchived = await db.getArchivedTasks();
-      setArchivedTasks(updatedArchived);
-    } catch (error) {
-      console.error('Failed to cleanup old archives:', error);
+  useEffect(() => {
+    if (!isLocked) {
+      void initializeApp();
     }
-  };
+  }, [isLocked, initializeApp]);
+
+  // Setup auto-lock on tab close/hide
+  useEffect(() => {
+    const cleanup = setupAutoLock(() => {
+      setIsLocked(true);
+    });
+    return cleanup;
+  }, []);
 
   const addTask = async (title: string, categoryId?: string) => {
     if (!title.trim()) return;
@@ -189,11 +189,6 @@ function App() {
 
   const handleUnlock = () => {
     setIsLocked(false);
-  };
-
-  const handleLock = () => {
-    clearSession();
-    setIsLocked(true);
   };
 
   const handleImport = async (data: { tasks: Task[]; categories: Category[]; archivedTasks: Task[] }) => {

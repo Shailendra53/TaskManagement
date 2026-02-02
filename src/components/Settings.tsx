@@ -67,7 +67,7 @@ export default function Settings({
         } else {
           alert('Invalid backup file format');
         }
-      } catch (error) {
+      } catch {
         alert('Failed to import: Invalid JSON file');
       }
     };
